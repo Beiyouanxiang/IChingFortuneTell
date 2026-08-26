@@ -45,11 +45,26 @@
       <section class="reading" aria-label="解读结果">
         <div class="question-card"><p>你问</p><h2 id="asked">我现在这个想法适不适合开始做？</h2></div>
         <div class="summary-card"><span>一句话</span><p id="oneLine"></p></div>
+        <div class="framework-grid" aria-label="势位时用">
+          <article><span>势</span><h3 id="forceTitle">局势如何运动</h3><p id="forceText"></p></article>
+          <article><span>位</span><h3 id="positionTitle">你站在哪里</h3><p id="positionText"></p></article>
+          <article><span>时</span><h3 id="timingTitle">此刻宜何为</h3><p id="timingText"></p></article>
+          <article><span>用</span><h3 id="useTitle">下一步怎么用</h3><p id="useText"></p></article>
+        </div>
+        <div class="change-card" aria-label="变爻解释">
+          <span>变爻</span>
+          <h3 id="changeTitle"></h3>
+          <p id="changeText"></p>
+        </div>
         <div class="reading-grid">
           <article><span>当前状态</span><h3 id="stateTitle">水雷屯</h3><p id="stateText"></p></article>
           <article><span>变化趋势</span><h3 id="trendTitle">火水未济</h3><p id="trendText"></p></article>
           <article><span>行动姿态</span><h3 id="adviceTitle">观</h3><ul id="adviceList"></ul></article>
           <article><span>不宜</span><h3>留一分余地</h3><p id="avoidText"></p></article>
+        </div>
+        <div class="reflection-card" aria-label="最后一问">
+          <span>最后一问</span>
+          <p id="reflectionQuestion"></p>
         </div>
         <div class="tool-row">
           <button id="recast" type="button">再起一卦</button>
