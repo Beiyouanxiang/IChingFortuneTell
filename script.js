@@ -96,6 +96,55 @@ function choosePosture(base, changed, changing) {
   if (changing >= 4) return "变";
   return base.posture || "观";
 }
+function buildFramework(reading) {
+  const { base, changed, topic, posture, changing } = reading;
+  const forceVerb = changing >= 4 ? "剧烈转动" : changing >= 2 ? "正在转向" : changing === 1 ? "出现微变" : "相对稳定";
+  const positionMap = {
+    career: "你更像站在职业路径的判断点，需要看这个动作是否能提升长期位置。",
+    project: "你更像站在项目结构的搭建处，需要先让闭环成立，再谈扩张。",
+    relationship: "你更像站在关系距离的调节处，需要看清回应、边界和真实感受。",
+    choice: "你更像站在岔路口，需要先分清可逆与不可逆的代价。",
+    emotion: "你更像站在内在秩序的修复处，需要先安顿自己，再处理外部问题。",
+    money: "你更像站在风险边界的确认处，需要先知道什么损失不可承受。",
+    study: "你更像站在输入与反馈的循环处，需要靠持续练习校正方向。",
+    general: "你更像站在局势的观察点，需要先看清时位，再决定进退。"
+  };
+  return {
+    force: `本卦为「${base.name}」，局势底色是“${base.keywords.join("、")}”。变爻 ${changing} 个，说明局面${forceVerb}，变化方向落向「${changed.name}」。`,
+    position: positionMap[topic.id] || positionMap.general,
+    timing: `此时取“${posture}”为主，不急着给命运下结论，先判断当前姿态是否顺势。`,
+    use: `${base.action} 这一步要落在「${topic.name}」这个场景里，先做小而真实的动作，再根据反馈调整。`
+  };
+}
+
+function changingReading(changing) {
+  const map = [
+    ["无变：守其本位", "局势相对稳定，重点不是马上转向，而是把当前姿态做稳、做细、做完整。"],
+    ["一爻变：微调即可", "变化已经露头，但力度还小。适合做轻量试探，不宜大幅改局。"],
+    ["二爻变：方向可试", "内外已经有明显牵动，可以开始验证新方向，但要保留退路。"],
+    ["三爻变：拉扯之中", "变化力量较复杂，容易同时想进、想退、想守。此时宜先分清主次。"],
+    ["四爻变：局势多动", "变化较强，旧判断可能很快失效。不要固执原计划，先看新的结构。"],
+    ["五爻变：大势将换", "多数爻已动，说明局面接近换框架。此时要保护核心，减少无谓消耗。"],
+    ["六爻全变：旧局已尽", "全部爻都在变化，旧局很难按原样延续。与其修补细节，不如重新定义问题。"]
+  ];
+  const picked = map[changing] || map[0];
+  return { title: picked[0], text: picked[1] };
+}
+
+function reflectionQuestion(reading) {
+  const topicQuestions = {
+    career: "你现在真正想争取的是更好的位置，还是只是想离开当前的不舒服？",
+    project: "如果只能保留一个最小闭环，你会保留哪一步来证明它真的有价值？",
+    relationship: "你期待的是对方回应你，还是期待自己终于不用再猜？",
+    choice: "这个选择里，哪一个代价是你其实已经知道但不愿承认的？",
+    emotion: "你现在最需要解决的是事情本身，还是身体和心先恢复稳定？",
+    money: "如果结果不如预期，你能承受的最大损失到底是多少？",
+    study: "你缺的是更多资料，还是一个可以每天执行的反馈节奏？",
+    general: "你现在最该改变的是外部行动，还是看待问题的框架？"
+  };
+  return topicQuestions[reading.topic.id] || topicQuestions.general;
+}
+
 function topicAdvice(topic, posture) {
   const map = {
     career: [`先确认这个动作是否提升你的长期位置。`, `用一个可见成果证明自己，而不是只解释想法。`, `姿态上取“${posture}”，但要保留职业边界。`],
@@ -132,6 +181,15 @@ function render(reading) {
   $("#stateText").textContent = `${reading.base.state}${reading.topic.lens}`;
   $("#trendTitle").textContent = reading.changed.name;
   $("#trendText").textContent = `变化指向「${reading.changed.name}」：${reading.changed.state}`;
+  const framework = buildFramework(reading);
+  const change = changingReading(reading.changing);
+  $("#forceText").textContent = framework.force;
+  $("#positionText").textContent = framework.position;
+  $("#timingText").textContent = framework.timing;
+  $("#useText").textContent = framework.use;
+  $("#changeTitle").textContent = change.title;
+  $("#changeText").textContent = change.text;
+  $("#reflectionQuestion").textContent = reflectionQuestion(reading);
   $("#adviceTitle").textContent = reading.posture;
   $("#avoidText").textContent = reading.base.avoid;
   const advices = [reading.base.action, ...topicAdvice(reading.topic, reading.posture)];
