@@ -82,6 +82,9 @@ const lineToBit = (line) => line === "yang" || line === "old-yang" ? "1" : "0";
 const changedBit = (line) => line === "old-yang" ? "0" : line === "old-yin" ? "1" : lineToBit(line);
 const historyKey = "guanshi-history-v2";
 let currentReading = null;
+let pendingQuestion = "";
+let pendingTopic = null;
+let clarificationAnswers = {};
 
 function randomLine() { return lineKinds[Math.floor(Math.random() * lineKinds.length)]; }
 function findHexagram(pattern) { return HEXAGRAMS.find((hexagram) => hexagram.pattern === pattern) || HEXAGRAMS[0]; }
@@ -145,6 +148,94 @@ function reflectionQuestion(reading) {
   return topicQuestions[reading.topic.id] || topicQuestions.general;
 }
 
+const CLARIFY_QUESTIONS = {
+  career: [
+    { id: "intent", text: "你现在更接近哪种状态？", options: ["主动争取", "想离开", "先观望"] },
+    { id: "block", text: "最大的阻力来自哪里？", options: ["能力资源", "人际关系", "外部机会"] },
+    { id: "priority", text: "你最看重什么？", options: ["稳定", "成长", "收入"] }
+  ],
+  project: [
+    { id: "stage", text: "这个项目现在处在哪一段？", options: ["刚有想法", "已经能用", "需要推广"] },
+    { id: "risk", text: "最大的不确定性是什么？", options: ["需求真假", "体验好坏", "执行成本"] },
+    { id: "next", text: "你最想验证什么？", options: ["用户愿不愿意用", "功能是否跑通", "是否值得继续投入"] }
+  ],
+  relationship: [
+    { id: "relation", text: "你们现在是什么关系？", options: ["暧昧试探", "稳定关系", "疏远拉扯"] },
+    { id: "block", text: "当前最大卡点是什么？", options: ["回应不清", "距离变化", "信任受损"] },
+    { id: "wish", text: "你心里更想要什么？", options: ["靠近", "确认", "放下"] }
+  ],
+  choice: [
+    { id: "choice", text: "这个选择更像什么？", options: ["进退选择", "左右比较", "是否开始"] },
+    { id: "cost", text: "你最担心哪种代价？", options: ["时间", "关系", "机会"] },
+    { id: "reversible", text: "这个决定可逆吗？", options: ["基本可逆", "很难回头", "不确定"] }
+  ],
+  emotion: [
+    { id: "duration", text: "这种状态持续多久了？", options: ["刚出现", "一段时间", "反复很久"] },
+    { id: "source", text: "主要来源是什么？", options: ["人际", "事情", "身体节奏"] },
+    { id: "need", text: "你现在最需要什么？", options: ["安定", "行动", "倾诉"] }
+  ],
+  money: [
+    { id: "move", text: "这更像哪类财务问题？", options: ["是否投入", "是否止损", "如何分配"] },
+    { id: "risk", text: "你最担心什么？", options: ["亏损", "错过", "现金流"] },
+    { id: "limit", text: "你有没有设上限？", options: ["有明确上限", "大概有", "还没有"] }
+  ],
+  study: [
+    { id: "stage", text: "学习现在卡在哪里？", options: ["开始困难", "坚持困难", "方法不清"] },
+    { id: "feedback", text: "你现在有反馈吗？", options: ["有清晰反馈", "反馈很慢", "几乎没有"] },
+    { id: "goal", text: "目标更偏向什么？", options: ["考试结果", "能力提升", "长期研究"] }
+  ],
+  general: [
+    { id: "state", text: "你现在更像处于什么状态？", options: ["想推进", "想等待", "想转向"] },
+    { id: "block", text: "最卡住你的是什么？", options: ["信息不足", "资源不足", "心里没定"] },
+    { id: "need", text: "你最需要卦帮你看什么？", options: ["当前处境", "下一步", "风险边界"] }
+  ]
+};
+
+function getClarifyQuestions(topic) {
+  return CLARIFY_QUESTIONS[topic.id] || CLARIFY_QUESTIONS.general;
+}
+
+function buildContextText(topic, answers) {
+  const questions = getClarifyQuestions(topic);
+  return questions.map((question) => `${question.text}${answers[question.id] || "未选择"}`).join("；");
+}
+
+function renderClarification(question) {
+  pendingQuestion = question;
+  pendingTopic = detectTopic(question);
+  clarificationAnswers = {};
+  const questions = getClarifyQuestions(pendingTopic);
+  $("#clarifyTopic").textContent = `识别为：${pendingTopic.name}`;
+  $("#clarifyCard").hidden = false;
+  $("#primaryActionText").textContent = "起卦";
+  $("#clarifyList").innerHTML = questions.map((question) => `
+    <div class="clarify-question" data-question-id="${question.id}">
+      <strong>${question.text}</strong>
+      <div class="option-row">
+        ${question.options.map((option) => `<button type="button" data-option="${option}">${option}</button>`).join("")}
+      </div>
+    </div>
+  `).join("");
+  document.querySelectorAll(".clarify-question button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const wrapper = button.closest(".clarify-question");
+      const id = wrapper.dataset.questionId;
+      clarificationAnswers[id] = button.dataset.option;
+      wrapper.querySelectorAll("button").forEach((item) => item.classList.remove("is-selected"));
+      button.classList.add("is-selected");
+    });
+  });
+  $("#clarifyCard").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function resetClarification() {
+  pendingQuestion = "";
+  pendingTopic = null;
+  clarificationAnswers = {};
+  $("#clarifyCard").hidden = true;
+  $("#primaryActionText").textContent = "继续";
+}
+
 function topicAdvice(topic, posture) {
   const map = {
     career: [`先确认这个动作是否提升你的长期位置。`, `用一个可见成果证明自己，而不是只解释想法。`, `姿态上取“${posture}”，但要保留职业边界。`],
@@ -158,14 +249,14 @@ function topicAdvice(topic, posture) {
   };
   return map[topic.id] || map.general;
 }
-function createReading(question) {
+function createReading(question, context = "") {
   const lines = Array.from({ length: 6 }, randomLine);
   const base = findHexagram(lines.map(lineToBit).join(""));
   const changed = findHexagram(lines.map(changedBit).join(""));
   const changing = lines.filter((line) => line.includes("old")).length;
-  const topic = detectTopic(question);
+  const topic = pendingTopic || detectTopic(question);
   const posture = choosePosture(base, changed, changing);
-  return { question, lines, base, changed, changing, topic, posture, createdAt: new Date().toLocaleString("zh-CN") };
+  return { question, context, lines, base, changed, changing, topic, posture, createdAt: new Date().toLocaleString("zh-CN") };
 }
 function render(reading) {
   currentReading = reading;
@@ -175,7 +266,7 @@ function render(reading) {
   $("#topicName").textContent = `场景 ${reading.topic.name}`;
   $("#changedCount").textContent = `变爻 ${reading.changing}`;
   $("#changedName").textContent = `变卦 ${reading.changed.name}`;
-  $("#asked").textContent = reading.question;
+  $("#asked").textContent = reading.context ? `${reading.question}｜${reading.context}` : reading.question;
   $("#oneLine").textContent = `${reading.base.phrase} ${reading.topic.lens}`;
   $("#stateTitle").textContent = reading.base.name;
   $("#stateText").textContent = `${reading.base.state}${reading.topic.lens}`;
@@ -204,7 +295,7 @@ function getHistory() {
   try { return JSON.parse(localStorage.getItem(historyKey) || "[]"); } catch { return []; }
 }
 function saveHistory(reading) {
-  const item = { question: reading.question, base: reading.base.name, changed: reading.changed.name, posture: reading.posture, topic: reading.topic.name, createdAt: reading.createdAt };
+  const item = { question: reading.context ? `${reading.question}｜${reading.context}` : reading.question, base: reading.base.name, changed: reading.changed.name, posture: reading.posture, topic: reading.topic.name, createdAt: reading.createdAt };
   localStorage.setItem(historyKey, JSON.stringify([item, ...getHistory()].slice(0, 6)));
   renderHistory();
 }
@@ -215,20 +306,33 @@ function renderHistory() {
 function castFromInput() {
   const question = $("#question").value.trim() || "我当下最应该看见什么？";
   $("#question").value = question;
-  const reading = createReading(question);
+  if (!pendingQuestion || pendingQuestion !== question) {
+    renderClarification(question);
+    return;
+  }
+  const context = buildContextText(pendingTopic, clarificationAnswers);
+  const reading = createReading(question, context);
   render(reading);
   saveHistory(reading);
+  resetClarification();
+  document.querySelector(".reading").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function copyCurrent() {
   if (!currentReading) return;
   const advice = [currentReading.base.action, ...topicAdvice(currentReading.topic, currentReading.posture)].join("\n- ");
-  const text = `观势问卦\n问题：${currentReading.question}\n场景：${currentReading.topic.name}\n本卦：${currentReading.base.name}\n变卦：${currentReading.changed.name}\n姿态：${currentReading.posture}\n一句话：${currentReading.base.phrase}\n建议：\n- ${advice}`;
+  const framework = buildFramework(currentReading);
+  const change = changingReading(currentReading.changing);
+  const text = `观势问卦\n问题：${currentReading.question}\n补充：${currentReading.context || "未补充"}\n场景：${currentReading.topic.name}\n本卦：${currentReading.base.name}\n变卦：${currentReading.changed.name}\n姿态：${currentReading.posture}\n一句话：${currentReading.base.phrase}\n势：${framework.force}\n位：${framework.position}\n时：${framework.timing}\n用：${framework.use}\n变爻：${change.title}，${change.text}\n最后一问：${reflectionQuestion(currentReading)}\n建议：\n- ${advice}`;
   navigator.clipboard?.writeText(text).then(() => { $("#copyResult").textContent = "已复制"; setTimeout(() => $("#copyResult").textContent = "复制结果", 1200); });
 }
 
 document.querySelectorAll(".examples button").forEach((button) => button.addEventListener("click", () => { $("#question").value = button.textContent; }));
 $("#questionForm").addEventListener("submit", (event) => { event.preventDefault(); castFromInput(); });
-$("#recast").addEventListener("click", castFromInput);
+$("#recast").addEventListener("click", () => {
+  if (!pendingQuestion) renderClarification($("#question").value.trim() || currentReading?.question || "我当下最应该看见什么？");
+  else castFromInput();
+});
+$("#resetClarify").addEventListener("click", resetClarification);
 $("#copyResult").addEventListener("click", copyCurrent);
 $("#clearHistory").addEventListener("click", () => { localStorage.removeItem(historyKey); renderHistory(); });
 render(createReading($("#question").value.trim()));
