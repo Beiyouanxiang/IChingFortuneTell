@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>观势</title>
+    <meta name="description" content="以易经卦象观察当下处境与下一步行动姿态。" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="brand"><span class="brand-mark">觀</span><span>观势</span></div>
+        <div class="grid">
+          <section>
+            <p class="eyebrow">以易观时位</p>
+            <h1>把当下的问题，化成一卦一策。</h1>
+            <p class="lead">输入一个真实困惑，观势会生成本卦与变卦，并结合问题场景，给出当前状态、变化趋势和下一步行动姿态。</p>
+            <form class="form" id="questionForm">
+              <label for="question">所问之事</label>
+              <textarea id="question" rows="4" placeholder="比如：我现在该不该换工作？">我现在这个想法适不适合开始做？</textarea>
+              <div class="actions">
+                <button class="cast" type="submit"><span>起卦</span><span aria-hidden="true">◎</span></button>
+                <small>用于反思与灵感启发，不替代法律、医疗、财务等专业建议。</small>
+              </div>
+            </form>
+            <div class="examples" aria-label="示例问题">
+              <button type="button">我现在要不要主动推进这个机会？</button>
+              <button type="button">这段关系下一步适合靠近还是退一点？</button>
+              <button type="button">这个项目现在最该先补哪一环？</button>
+              <button type="button">我最近情绪很乱，应该先处理什么？</button>
+            </div>
+          </section>
+          <aside class="oracle" aria-label="卦象结果">
+            <div class="oracle-head">
+              <div><p>本卦</p><h2 id="baseName">水雷屯</h2></div>
+              <div class="posture" id="posture">观</div>
+            </div>
+            <div class="hexagram" id="hexagram"></div>
+            <p class="phrase" id="phrase">初生多阻，宜先立根。</p>
+            <div class="meta"><span id="topicName">场景 项目</span><span id="changedCount">变爻 0</span><span id="changedName">变卦 水雷屯</span></div>
+          </aside>
+        </div>
+      </section>
+      <section class="reading" aria-label="解读结果">
+        <div class="question-card"><p>你问</p><h2 id="asked">我现在这个想法适不适合开始做？</h2></div>
+        <div class="summary-card"><span>一句话</span><p id="oneLine"></p></div>
+        <div class="reading-grid">
+          <article><span>当前状态</span><h3 id="stateTitle">水雷屯</h3><p id="stateText"></p></article>
+          <article><span>变化趋势</span><h3 id="trendTitle">火水未济</h3><p id="trendText"></p></article>
+          <article><span>行动姿态</span><h3 id="adviceTitle">观</h3><ul id="adviceList"></ul></article>
+          <article><span>不宜</span><h3>留一分余地</h3><p id="avoidText"></p></article>
+        </div>
+        <div class="tool-row">
+          <button id="recast" type="button">再起一卦</button>
+          <button id="copyResult" type="button">复制结果</button>
+          <button id="clearHistory" type="button">清空记录</button>
+        </div>
+        <section class="history" aria-label="最近问卦记录">
+          <div class="section-title"><span>最近记录</span><small>保存在当前浏览器</small></div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
