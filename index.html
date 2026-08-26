@@ -20,10 +20,18 @@
               <label for="question">所问之事</label>
               <textarea id="question" rows="4" placeholder="比如：我现在该不该换工作？">我现在这个想法适不适合开始做？</textarea>
               <div class="actions">
-                <button class="cast" type="submit"><span>起卦</span><span aria-hidden="true">◎</span></button>
+                <button class="cast" type="submit"><span id="primaryActionText">继续</span><span aria-hidden="true">◎</span></button>
                 <small>用于反思与灵感启发，不替代法律、医疗、财务等专业建议。</small>
               </div>
             </form>
+            <div class="clarify-card" id="clarifyCard" hidden>
+              <div class="clarify-head">
+                <span id="clarifyTopic">场景识别</span>
+                <button id="resetClarify" type="button">重问</button>
+              </div>
+              <p>先补三句处境，再起卦。不是为了限制答案，而是让卦落到你的真实位置上。</p>
+              <div class="clarify-list" id="clarifyList"></div>
+            </div>
             <div class="examples" aria-label="示例问题">
               <button type="button">我现在要不要主动推进这个机会？</button>
               <button type="button">这段关系下一步适合靠近还是退一点？</button>
