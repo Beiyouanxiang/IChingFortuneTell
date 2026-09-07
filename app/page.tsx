@@ -1,193 +1,352 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildLocalInterpretation,
+  castReading,
+  changeReading,
+  detectRisk,
+  detectTopic,
+  getClarifyQuestions,
+  reflectionQuestions,
+  sanitizeText,
+  topicAdvice,
+} from "@/lib/iching.js";
+import { buildClientFallback, createRequestSequence, isLocalInterpretationMode } from "@/lib/client-request.js";
 
-type LineKind = "yin" | "yang" | "old-yin" | "old-yang";
+type Provider = "local" | "glm" | "deepseek" | "kimi";
+type LineKind = "old-yin" | "yang" | "yin" | "old-yang";
 
 type Hexagram = {
-  id: number;
+  number: number;
   name: string;
   pattern: string;
   phrase: string;
   state: string;
-  trend: string;
-  advice: string[];
+  action: string;
   avoid: string;
+  posture: string;
   keywords: string[];
 };
 
+type Topic = { id: string; name: string; lens: string };
+
 type Reading = {
   question: string;
+  clarifications: string[];
+  topic: Topic;
   lines: LineKind[];
-  changed: boolean[];
-  base: Hexagram;
+  movingLines: number[];
+  primaryHexagram: Hexagram;
   changedHexagram: Hexagram;
   posture: string;
+  createdAt: string;
 };
 
-const hexagrams: Hexagram[] = [
-  {
-    id: 1,
-    name: "乾为天",
-    pattern: "111111",
-    phrase: "势在上升，贵在守正。",
-    state: "当下有强烈的主动性和开创力，局面正在向外展开。真正的关键不是敢不敢动，而是能不能让行动保持节制和方向。",
-    trend: "如果继续推进，机会会被打开，但节奏过猛也容易让你忽略边界。",
-    advice: ["主动争取关键位置", "把目标拆成可验证的一步", "用规则约束自己的冲劲"],
-    avoid: "避免只凭热情硬冲，也避免把所有压力都扛在自己身上。",
-    keywords: ["开创", "主动", "领导", "自强"],
-  },
-  {
-    id: 2,
-    name: "坤为地",
-    pattern: "000000",
-    phrase: "厚德载物，先承后成。",
-    state: "当前更适合接住现实、整理资源、等待条件成熟。它不是软弱，而是用承载力换取稳定。",
-    trend: "局势会通过积累而变化，越急着证明自己，越容易打乱已经形成的底盘。",
-    advice: ["先把身边资源盘清", "配合更大的节奏", "用稳定兑现信任"],
-    avoid: "避免过早站到台前，也避免把退让误解成没有选择。",
-    keywords: ["承载", "顺势", "积累", "稳定"],
-  },
-  {
-    id: 3,
-    name: "水雷屯",
-    pattern: "100010",
-    phrase: "初生多阻，宜先立根。",
-    state: "事情处在刚开始的混沌期，有生机，也有阻力。很多问题不是方向错了，而是秩序还没有长出来。",
-    trend: "下一步会继续遇到摩擦，但每一次整理都会让结构更清楚。",
-    advice: ["先解决最卡住的一环", "找一个可靠的人一起定规则", "允许第一版粗糙但要能运转"],
-    avoid: "避免一开始就追求完美，也避免因为混乱就判断它没有价值。",
-    keywords: ["开始", "混沌", "立规", "破土"],
-  },
-  {
-    id: 4,
-    name: "山水蒙",
-    pattern: "010001",
-    phrase: "未知不是错，先求明。",
-    state: "现在最大的变量不是外界，而是信息不足。你可能已经感觉到方向，但还缺少判断它的依据。",
-    trend: "只要愿意学习和请教，局势会逐渐清楚；若急着下结论，容易反复。",
-    advice: ["先提出更准确的问题", "向懂行的人请教", "用一次小实验换答案"],
-    avoid: "避免用情绪填补信息空白，也避免装作已经完全明白。",
-    keywords: ["启蒙", "学习", "请教", "试探"],
-  },
-  {
-    id: 11,
-    name: "地天泰",
-    pattern: "111000",
-    phrase: "天地相交，小往大来。",
-    state: "局面有流通感，上下、内外、资源与目标之间正在接上。此时适合推进合作和整合。",
-    trend: "如果能保持开放，事情会从局部顺畅发展为整体顺畅。",
-    advice: ["促成对话与连接", "把已有优势组合起来", "趁顺势推进一件重要事"],
-    avoid: "避免因为顺利就松散，也避免忽略小问题的积累。",
-    keywords: ["通达", "合作", "整合", "顺势"],
-  },
-  {
-    id: 12,
-    name: "天地否",
-    pattern: "000111",
-    phrase: "上下不交，宜止而观。",
-    state: "当下有阻隔感，想法、资源或关系没有真正流动起来。越急着推动，越容易撞到看不见的墙。",
-    trend: "短期内不宜硬进，先看清哪里不通，才有重新打开的可能。",
-    advice: ["暂停无效沟通", "识别真正的阻塞点", "保存实力等待转机"],
-    avoid: "避免把沉默当成同意，也避免在对方没准备好时强行推进。",
-    keywords: ["闭塞", "阻隔", "停顿", "观察"],
-  },
-  {
-    id: 24,
-    name: "地雷复",
-    pattern: "100000",
-    phrase: "一阳来复，转机已动。",
-    state: "看似低谷，但新的力量已经出现。它还很微弱，需要保护，而不是立刻放大。",
-    trend: "接下来会有回升的迹象，关键是顺着小变化慢慢恢复。",
-    advice: ["从一个可坚持的小行动开始", "修复作息和基本节奏", "不要急着宣布结果"],
-    avoid: "避免刚有转机就过度消耗，也避免否定微小进展。",
-    keywords: ["回归", "复苏", "转机", "小火苗"],
-  },
-  {
-    id: 29,
-    name: "坎为水",
-    pattern: "010010",
-    phrase: "险中求信，稳步过坎。",
-    state: "你处在压力、风险或不确定之中。此卦不说马上脱险，而是提醒你在险境中保持清醒和可信。",
-    trend: "困难可能还会反复，但只要不乱，路会在一段一段通过中出现。",
-    advice: ["先确保底线安全", "只处理眼前最真实的问题", "用稳定行动建立信任"],
-    avoid: "避免赌一把式解决，也避免被恐惧带着走。",
-    keywords: ["风险", "坚持", "底线", "穿越"],
-  },
-  {
-    id: 52,
-    name: "艮为山",
-    pattern: "001001",
-    phrase: "止于其所，静中见界。",
-    state: "当前更适合停下、定界、收心。停止不是失败，而是让力量回到该在的位置。",
-    trend: "局面会因边界清晰而稳定，暂时不动反而能避免多余消耗。",
-    advice: ["暂停新增承诺", "明确自己的边界", "把注意力收回到当下"],
-    avoid: "避免把所有沉默都理解成错过，也避免为了证明自己而继续消耗。",
-    keywords: ["停止", "边界", "安定", "自守"],
-  },
-  {
-    id: 64,
-    name: "火水未济",
-    pattern: "010101",
-    phrase: "未成之际，慎终如始。",
-    state: "事情接近成形，但还没有真正完成。现在最容易因为快到终点而松手。",
-    trend: "下一步有机会完成转化，但细节决定成败。",
-    advice: ["检查最后几个关键环节", "让节奏慢半拍", "把未完成的事逐项收口"],
-    avoid: "避免提前庆祝，也避免因为最后的不确定而全盘否定。",
-    keywords: ["未完成", "收口", "谨慎", "转化"],
-  },
+type Interpretation = {
+  summary: string;
+  shi: string;
+  wei: string;
+  shiJi: string;
+  yong: string[];
+  risks: string[];
+  reflectionQuestions: string[];
+  sevenDayExperiment: string;
+  safetyNote: string;
+};
+
+type InterpretMeta = {
+  provider: string;
+  model: string;
+  status: string;
+  elapsedMs: number;
+  riskType: string;
+  upstreamProvider?: string;
+  upstreamModel?: string;
+};
+
+type HistoryItem = {
+  question: string;
+  primary: string;
+  changed: string;
+  posture: string;
+  topic: string;
+  createdAt: string;
+};
+
+const HISTORY_KEY = "guanshi-history-v3";
+const PROVIDERS: { id: Provider; name: string }[] = [
+  { id: "local", name: "仅本地" },
+  { id: "glm", name: "GLM" },
+  { id: "deepseek", name: "DeepSeek" },
+  { id: "kimi", name: "Kimi" },
+];
+const EXAMPLES = [
+  "我现在要不要主动推进这个机会？",
+  "这段关系下一步适合靠近还是退一点？",
+  "这个项目现在最该先补哪一环？",
+  "我最近情绪很乱，应该先处理什么？",
 ];
 
-const fallbackHexagram: Hexagram = hexagrams[0];
+export default function Home() {
+  const [question, setQuestion] = useState("我现在这个想法适不适合开始做？");
+  const topic = useMemo(() => detectTopic(question), [question]);
+  const clarifyQuestions = useMemo(() => getClarifyQuestions(topic.id), [topic.id]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [provider, setProvider] = useState<Provider>("local");
+  const [reading, setReading] = useState<Reading | null>(null);
+  const [interpretation, setInterpretation] = useState<Interpretation | null>(null);
+  const [meta, setMeta] = useState<InterpretMeta | null>(null);
+  const [status, setStatus] = useState<"idle" | "cast" | "interpreting" | "success" | "fallback" | "error">("idle");
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const requestSequenceRef = useRef(createRequestSequence());
 
-function randomLine(): LineKind {
-  const value = Math.floor(Math.random() * 4);
-  return ["yin", "yang", "old-yin", "old-yang"][value] as LineKind;
-}
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHistory(loadHistory()), 0);
+    return () => {
+      window.clearTimeout(timer);
+      abortRef.current?.abort();
+    };
+  }, []);
 
-function lineToBit(line: LineKind) {
-  return line === "yang" || line === "old-yang" ? "1" : "0";
-}
+  async function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanQuestion = sanitizeText(question) || "我当下最应该看见什么？";
+    const clarifications = clarifyQuestions.map((item: { text: string; id: string }) => `${item.text}${answers[item.id] || "未选择"}`);
+    const nextReading = castReading(cleanQuestion, clarifications) as Reading;
+    setQuestion(cleanQuestion);
+    setReading(nextReading);
+    setInterpretation(null);
+    setMeta(null);
+    setStatus("cast");
+    setError("");
+    saveHistory(nextReading, setHistory);
+    await requestInterpretation(nextReading, provider);
+  }
 
-function changedBit(line: LineKind) {
-  if (line === "old-yang") return "0";
-  if (line === "old-yin") return "1";
-  return lineToBit(line);
-}
+  async function reinterpret(nextProvider = provider) {
+    if (!reading) return;
+    setProvider(nextProvider);
+    await requestInterpretation(reading, nextProvider);
+  }
 
-function findHexagram(pattern: string) {
-  const exact = hexagrams.find((hexagram) => hexagram.pattern === pattern);
-  if (exact) return exact;
+  async function requestInterpretation(activeReading: Reading, activeProvider: Provider) {
+    abortRef.current?.abort();
+    const requestId = requestSequenceRef.current.begin();
+    const riskType = detectRisk(activeReading.question, activeReading.clarifications);
 
-  const seed = pattern.split("").reduce((sum, bit, index) => sum + Number(bit) * (index + 3), 0);
-  return hexagrams[seed % hexagrams.length] ?? fallbackHexagram;
-}
+    if (isLocalInterpretationMode(activeProvider)) {
+      const local = buildLocalInterpretation(activeReading, riskType) as Interpretation;
+      setInterpretation(local);
+      setMeta({ provider: "local", model: riskType === "normal" ? "template" : "safety", status: riskType === "normal" ? "local_only" : "safety_branch", elapsedMs: 0, riskType });
+      setStatus("success");
+      setError("");
+      return;
+    }
 
-function choosePosture(base: Hexagram, changedHexagram: Hexagram, changedCount: number) {
-  if (changedCount === 0) return "守";
-  if (base.keywords.includes("阻隔") || base.keywords.includes("风险")) return "稳";
-  if (changedHexagram.keywords.includes("转机") || changedHexagram.keywords.includes("通达")) return "进";
-  if (base.keywords.includes("停止")) return "止";
-  if (changedCount >= 3) return "变";
-  return "观";
-}
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus("interpreting");
+    setError("");
 
-function createReading(question: string): Reading {
-  const lines = Array.from({ length: 6 }, randomLine);
-  const basePattern = lines.map(lineToBit).join("");
-  const changedPattern = lines.map(changedBit).join("");
-  const changed = lines.map((line) => line === "old-yin" || line === "old-yang");
-  const base = findHexagram(basePattern);
-  const changedHexagram = findHexagram(changedPattern);
+    const timeout = window.setTimeout(() => controller.abort(), 22000);
+    try {
+      const response = await fetch("/api/interpret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          question: activeReading.question,
+          clarifications: activeReading.clarifications,
+          lines: activeReading.lines,
+          movingLines: activeReading.movingLines,
+          primaryHexagram: {
+            number: activeReading.primaryHexagram.number,
+            name: activeReading.primaryHexagram.name,
+            pattern: activeReading.primaryHexagram.pattern,
+            lines: activeReading.lines,
+          },
+          changedHexagram: {
+            number: activeReading.changedHexagram.number,
+            name: activeReading.changedHexagram.name,
+            pattern: activeReading.changedHexagram.pattern,
+          },
+          provider: activeProvider,
+          locale: "zh-CN",
+        }),
+      });
+      const body = await response.json() as { interpretation?: Interpretation; meta?: InterpretMeta; error?: string };
+      if (!response.ok || !body?.interpretation) throw new Error(body?.error || "interpret_failed");
+      if (!requestSequenceRef.current.isLatest(requestId)) return;
+      setInterpretation(body.interpretation);
+      setMeta(body.meta ?? null);
+      setStatus(String(body.meta?.status || "").startsWith("fallback") ? "fallback" : "success");
+    } catch (caught) {
+      if (!requestSequenceRef.current.isLatest(requestId)) return;
+      const fallback = buildClientFallback(activeReading, { detectRisk, buildLocalInterpretation });
+      setInterpretation(fallback.interpretation as Interpretation);
+      setMeta({ provider: "local", model: fallback.model, status: fallback.status, elapsedMs: 0, riskType: fallback.riskType });
+      setStatus("fallback");
+      setError(caught instanceof Error ? caught.message : "interpret_failed");
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestSequenceRef.current.isLatest(requestId)) abortRef.current = null;
+    }
+  }
 
-  return {
-    question,
-    lines,
-    changed,
-    base,
-    changedHexagram,
-    posture: choosePosture(base, changedHexagram, changed.filter(Boolean).length),
-  };
+  function updateQuestion(value: string) {
+    if (detectTopic(value).id !== topic.id) setAnswers({});
+    setQuestion(value);
+  }
+
+  const selectedAnswers = clarifyQuestions.filter((item: { id: string }) => answers[item.id]).length;
+  const statusText = statusLabel(status, meta);
+
+  return (
+    <main className="product-shell">
+      <section className="hero-shell">
+        <div className="brand-row" aria-label="观势">
+          <span className="brand-mark">觀</span>
+          <span>观势</span>
+        </div>
+
+        <div className="hero-grid">
+          <section className="intro-panel">
+            <p className="eyebrow">以易观时位</p>
+            <h1>把当下的问题，化成一卦一策。</h1>
+            <p className="lead">先理解处境，再起卦定事实；模型只做解读，不改卦、不重算卦。</p>
+
+            <form className="question-form" onSubmit={submitQuestion}>
+              <label htmlFor="question">所问之事</label>
+              <textarea
+                id="question"
+                value={question}
+                onChange={(event) => updateQuestion(event.target.value)}
+                rows={4}
+                maxLength={600}
+                placeholder="比如：我现在该不该换工作？"
+              />
+
+              <div className="clarify-block" aria-label="处境澄清">
+                <div className="clarify-title">
+                  <span>识别为：{topic.name}</span>
+                  <small>{selectedAnswers}/{clarifyQuestions.length}</small>
+                </div>
+                <div className="clarify-list">
+                  {clarifyQuestions.map((item: { id: string; text: string; options: string[] }) => (
+                    <div className="clarify-question" key={item.id}>
+                      <strong>{item.text}</strong>
+                      <div className="option-row">
+                        {item.options.map((option) => (
+                          <button
+                            className={answers[item.id] === option ? "is-selected" : ""}
+                            key={option}
+                            type="button"
+                            onClick={() => setAnswers((current) => ({ ...current, [item.id]: option }))}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="model-row">
+                <span>解读模型</span>
+                <div className="provider-tabs" role="group" aria-label="选择模型">
+                  {PROVIDERS.map((item) => (
+                    <button
+                      className={provider === item.id ? "is-selected" : ""}
+                      key={item.id}
+                      type="button"
+                      onClick={() => reading ? reinterpret(item.id) : setProvider(item.id)}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <p className="privacy-note">{provider === "local"
+                ? "仅本地模式：问题和澄清不会发送到本站服务器或第三方模型。"
+                : `联网模式：完整问题与澄清会发送给 ${PROVIDERS.find((item) => item.id === provider)?.name}，数据将离开本站，并可能按该服务商的政策被保留或处理。`}
+              </p>
+
+              <div className="form-actions">
+                <button type="submit" disabled={status === "interpreting"}>
+                  <span>{reading ? "重新起卦" : "起卦解读"}</span>
+                  <i aria-hidden="true">◎</i>
+                </button>
+                <span>用于结构化反思，不替代法律、医疗、财务等专业建议。</span>
+              </div>
+            </form>
+
+            <div className="example-row" aria-label="示例问题">
+              {EXAMPLES.map((example) => (
+                <button key={example} type="button" onClick={() => updateQuestion(example)}>
+                  {example}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <aside className="oracle-panel" aria-label="卦象结果">
+            <div className="oracle-heading">
+              <div>
+                <p>{reading ? "本卦" : "起卦前"}</p>
+                <h2>{reading ? reading.primaryHexagram.name : "未起卦"}</h2>
+              </div>
+              <span>{reading ? reading.posture : "待"}</span>
+            </div>
+            {reading ? <HexagramLines lines={reading.lines} /> : <EmptyHexagram />}
+            <p className="oracle-phrase">{reading ? `现代卦意提要：${reading.primaryHexagram.phrase}` : "补齐处境后再看时位。"}</p>
+            <div className="meta-grid">
+              <span>{reading ? `变爻 ${reading.movingLines.length}` : "变爻 -"}</span>
+              <span>{reading ? `变卦 ${reading.changedHexagram.name}` : "变卦 -"}</span>
+              <span>{statusText}</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section className="reading-shell" aria-label="解读结果">
+        {!reading ? <StartState /> : (
+          <>
+            <div className="question-card">
+              <p>你问</p>
+              <h2>{reading.question}</h2>
+              <div className="context-line">{reading.clarifications.join("；")}</div>
+            </div>
+
+            {status === "interpreting" && <StatusPanel title="正在生成解读" text="卦象事实已经固定，正在让模型结合你的问题做个性化解读。" />}
+            {status === "fallback" && <StatusPanel title="已回退到本地解释" text="模型超时、不可用或输出未通过校验时，会使用本地模板继续给出结构化建议。" tone="warn" />}
+            {status === "error" && <StatusPanel title="解读失败" text={error || "请稍后再试。"} tone="warn" />}
+
+            {interpretation ? <InterpretationView interpretation={interpretation} meta={meta} /> : <LocalReading reading={reading} />}
+
+            <section className="history" aria-label="最近问卦记录">
+              <div className="section-title">
+                <span>最近记录</span>
+                <small>保存在当前浏览器</small>
+              </div>
+              <div className="history-list">
+                {history.length ? history.map((item) => (
+                  <article className="history-item" key={`${item.createdAt}-${item.question}`}>
+                    <b>{item.primary} → {item.changed}｜{item.posture}｜{item.topic}</b>
+                    <p>{item.question}</p>
+                  </article>
+                )) : <article className="history-item"><p>还没有记录。</p></article>}
+              </div>
+            </section>
+          </>
+        )}
+      </section>
+    </main>
+  );
 }
 
 function HexagramLines({ lines }: { lines: LineKind[] }) {
@@ -198,10 +357,8 @@ function HexagramLines({ lines }: { lines: LineKind[] }) {
         const isChanging = line === "old-yin" || line === "old-yang";
         return (
           <div className="hex-line" key={`${line}-${index}`}>
-            <span className={isYang ? "solid-line" : "broken-line"}>
-              {!isYang && <span />}
-            </span>
-            {isChanging && <b>变</b>}
+            <span className={isYang ? "solid-line" : "broken-line"}>{!isYang && <span />}</span>
+            {isChanging ? <b>变</b> : <span />}
           </div>
         );
       })}
@@ -209,115 +366,101 @@ function HexagramLines({ lines }: { lines: LineKind[] }) {
   );
 }
 
-const examples = ["我现在要不要主动推进这个机会？", "这段关系下一步适合靠近还是退一点？", "这个项目现在最该先补哪一环？"];
+function EmptyHexagram() {
+  return (
+    <div className="hexagram is-empty" aria-hidden="true">
+      {Array.from({ length: 6 }).map((_, index) => <div className="hex-line" key={index}><span className="solid-line" /><span /></div>)}
+    </div>
+  );
+}
 
-export default function Home() {
-  const [question, setQuestion] = useState("我现在这个想法适不适合开始做？");
-  const [reading, setReading] = useState<Reading>(() => createReading("我现在这个想法适不适合开始做？"));
+function StartState() {
+  return (
+    <div className="start-panel">
+      <span>起卦前</span>
+      <h2>先把问题放进具体处境。</h2>
+      <p>观势会根据你的问题识别场景，并用三次澄清把答案落到现实位置。卦象由程序起出，模型只能解释已经固定的事实。</p>
+    </div>
+  );
+}
 
-  const changedCount = useMemo(() => reading.changed.filter(Boolean).length, [reading]);
+function StatusPanel({ title, text, tone = "normal" }: { title: string; text: string; tone?: "normal" | "warn" }) {
+  return <div className={`status-panel ${tone}`}><strong>{title}</strong><p>{text}</p></div>;
+}
 
-  function submitQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const cleanQuestion = question.trim() || "我当下最应该看见什么？";
-    setQuestion(cleanQuestion);
-    setReading(createReading(cleanQuestion));
-  }
+function LocalReading({ reading }: { reading: Reading }) {
+  const change = changeReading(reading.movingLines.length);
+  const questions = reflectionQuestions(reading.topic.id) as string[];
+  const advices = [reading.primaryHexagram.action, ...topicAdvice(reading.topic.id, reading.posture)] as string[];
 
   return (
-    <main className="min-h-screen bg-[#f7f3eb] text-[#211d18]">
-      <section className="hero-shell">
-        <div className="brand-row" aria-label="观势">
-          <span className="brand-mark">觀</span>
-          <span>观势</span>
-        </div>
-
-        <div className="hero-grid">
-          <div className="intro-panel">
-            <p className="eyebrow">以易观时位</p>
-            <h1>把当下的问题，化成一卦一策。</h1>
-            <p className="lead">
-              输入一个真实困惑，观势会生成本卦与变卦，帮你看见当前局面、变化趋势，以及下一步更合适的行动姿态。
-            </p>
-
-            <form className="question-form" onSubmit={submitQuestion}>
-              <label htmlFor="question">所问之事</label>
-              <textarea
-                id="question"
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                rows={4}
-                placeholder="比如：我现在该不该换工作？"
-              />
-              <div className="form-actions">
-                <button type="submit" aria-label="起卦">
-                  <span>起卦</span>
-                  <i aria-hidden="true">◎</i>
-                </button>
-                <span>用于反思与灵感启发，不替代专业建议。</span>
-              </div>
-            </form>
-
-            <div className="example-row" aria-label="示例问题">
-              {examples.map((example) => (
-                <button key={example} type="button" onClick={() => setQuestion(example)}>
-                  {example}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <aside className="oracle-panel" aria-label="卦象结果">
-            <div className="oracle-heading">
-              <div>
-                <p>本卦</p>
-                <h2>{reading.base.name}</h2>
-              </div>
-              <span>{reading.posture}</span>
-            </div>
-            <HexagramLines lines={reading.lines} />
-            <p className="oracle-phrase">{reading.base.phrase}</p>
-            <div className="meta-grid">
-              <span>变爻 {changedCount}</span>
-              <span>变卦 {reading.changedHexagram.name}</span>
-            </div>
-          </aside>
-        </div>
-      </section>
-
-      <section className="reading-shell" aria-label="解读结果">
-        <div className="question-card">
-          <p>你问</p>
-          <h2>{reading.question}</h2>
-        </div>
-
-        <div className="reading-grid">
-          <article>
-            <span>当前状态</span>
-            <h3>{reading.base.name}</h3>
-            <p>{reading.base.state}</p>
-          </article>
-          <article>
-            <span>变化趋势</span>
-            <h3>{reading.changedHexagram.name}</h3>
-            <p>{reading.changedHexagram.trend}</p>
-          </article>
-          <article>
-            <span>行动姿态</span>
-            <h3>{reading.posture}</h3>
-            <ul>
-              {reading.base.advice.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
-          <article>
-            <span>不宜</span>
-            <h3>留一分余地</h3>
-            <p>{reading.base.avoid}</p>
-          </article>
-        </div>
-      </section>
-    </main>
+    <div className="reading-grid">
+      <article><span>当前状态</span><h3>{reading.primaryHexagram.name}</h3><p>{reading.primaryHexagram.state}{reading.topic.lens}</p></article>
+      <article><span>变化趋势</span><h3>{reading.changedHexagram.name}</h3><p>变化指向「{reading.changedHexagram.name}」：{reading.changedHexagram.state}</p></article>
+      <article><span>时机判断</span><h3>{change.title}</h3><p>{change.text}</p></article>
+      <article><span>行动姿态</span><h3>{reading.posture}</h3><ul>{advices.map((item) => <li key={item}>{item}</li>)}</ul></article>
+      <article><span>不宜</span><h3>留一分余地</h3><p>{reading.primaryHexagram.avoid}</p></article>
+      <article><span>追问</span><h3>再看一层</h3><ul>{questions.map((item) => <li key={item}>{item}</li>)}</ul></article>
+    </div>
   );
+}
+
+function InterpretationView({ interpretation, meta }: { interpretation: Interpretation; meta: InterpretMeta | null }) {
+  return (
+    <div className="interpretation-grid">
+      <article className="wide"><span>总结</span><h3>{interpretation.summary}</h3></article>
+      <article><span>势</span><p>{interpretation.shi}</p></article>
+      <article><span>位</span><p>{interpretation.wei}</p></article>
+      <article><span>时机</span><p>{interpretation.shiJi}</p></article>
+      <article><span>用</span><ul>{interpretation.yong.map((item) => <li key={item}>{item}</li>)}</ul></article>
+      <article><span>风险</span><ul>{interpretation.risks.map((item) => <li key={item}>{item}</li>)}</ul></article>
+      <article><span>追问</span><ul>{interpretation.reflectionQuestions.map((item) => <li key={item}>{item}</li>)}</ul></article>
+      <article className="wide"><span>七天实验</span><p>{interpretation.sevenDayExperiment}</p></article>
+      <article className="wide quiet"><span>边界</span><p>{interpretation.safetyNote}</p><small>{meta ? `${meta.provider} / ${meta.model} / ${meta.status} / ${meta.elapsedMs}ms` : "local"}</small></article>
+    </div>
+  );
+}
+
+function loadHistory(): HistoryItem[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(0, 8).flatMap((item): HistoryItem[] => {
+      if (!item || typeof item !== "object") return [];
+      return [{
+        question: sanitizeText((item as HistoryItem).question, 600),
+        primary: sanitizeText((item as HistoryItem).primary, 40),
+        changed: sanitizeText((item as HistoryItem).changed, 40),
+        posture: sanitizeText((item as HistoryItem).posture, 10),
+        topic: sanitizeText((item as HistoryItem).topic, 20),
+        createdAt: sanitizeText((item as HistoryItem).createdAt, 40),
+      }].filter((entry) => entry.question && entry.primary && entry.changed);
+    });
+  } catch {
+    localStorage.removeItem(HISTORY_KEY);
+    return [];
+  }
+}
+
+function saveHistory(reading: Reading, setHistory: (items: HistoryItem[]) => void) {
+  const item = {
+    question: reading.question,
+    primary: reading.primaryHexagram.name,
+    changed: reading.changedHexagram.name,
+    posture: reading.posture,
+    topic: reading.topic.name,
+    createdAt: new Date().toISOString(),
+  };
+  const next = [item, ...loadHistory()].slice(0, 8);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  setHistory(next);
+}
+
+function statusLabel(status: string, meta: InterpretMeta | null) {
+  if (status === "idle") return "等待起卦";
+  if (status === "cast") return "起卦完成";
+  if (status === "interpreting") return "生成中";
+  if (status === "fallback") return "本地回退";
+  if (status === "success") return meta?.provider ? `${meta.provider} 解读` : "解读完成";
+  return "需要重试";
 }
