@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "iching-fortune-tell",
       script: "npm",
-      args: "run start -- --host 127.0.0.1 --port 4173",
+      args: "run start -- --hostname 127.0.0.1 --port 4173",
       cwd: __dirname + "/..",
       instances: 1,
       exec_mode: "fork",

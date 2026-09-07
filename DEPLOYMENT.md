@@ -64,7 +64,7 @@ npx tsc --noEmit
 npm run lint
 npm run build
 npm audit --omit=dev
-npm run start -- --host 127.0.0.1 --port 4173
+npm run start -- --hostname 127.0.0.1 --port 4173
 # In another shell, with SMOKE_BASE_URL matching the selected port:
 SMOKE_BASE_URL=http://127.0.0.1:4173 npm run smoke:production
 ```
